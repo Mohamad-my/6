@@ -1,17 +1,22 @@
-<?php
+<?php 
 // إعدادات الاتصال بـ Supabase
 $supabase_url = "https://nlszbtvnyniqdokpubbq.supabase.co"; 
 $supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5sc3pidHZueW5pcWRva3B1YmJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzAyMjM5NDYsImV4cCI6MjA0NTc5OTk0Nn0.nXmb3WE-cEZqTrqGANth0yI363S2_s_T812roEKTc4I";
 
-// إضافة مراجعة جديدة
+// التحقق من الاتصال
+if (empty($supabase_url) || empty($supabase_key)) {
+    die("الرجاء ضبط إعدادات Supabase");
+}
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    // جلب بيانات النموذج
     $name = trim($_POST['name']);
     $text = trim($_POST['text']);
-    $rating = (int)$_POST['rating'];
+    $rating = intval($_POST['rating']);
 
+    // التحقق من صحة البيانات
     if (empty($name) || empty($text) || $rating < 1 || $rating > 5) {
-        echo "يرجى ملء جميع الحقول بشكل صحيح.";
-        exit;
+        die("يرجى ملء جميع الحقول بشكل صحيح.");
     }
 
     $data = [
@@ -20,50 +25,73 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         "rating" => $rating
     ];
 
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "$supabase_url/rest/v1/reviews");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "Content-Type: application/json",
-        "Authorization: Bearer $supabase_key",
-        "apikey: $supabase_key",
-        "Prefer: return=representation"
-    ]);
+    // إعداد الخيارات للـ POST
+    $options = [
+        "http" => [
+            "header"  => "Content-type: application/json\r\nAuthorization: Bearer $supabase_key\r\nPrefer: return=representation",
+            "method"  => "POST",
+            "content" => json_encode($data),
+            "ignore_errors" => true
+        ],
+        "ssl" => [
+            "verify_peer" => false,
+            "verify_peer_name" => false
+        ]
+    ];
 
-    $result = curl_exec($ch);
-    if ($result === false) {
-        echo "حدث خطأ أثناء إضافة المراجعة: " . curl_error($ch);
+    $context  = stream_context_create($options);
+    $result = file_get_contents("$supabase_url/rest/v1/reviews", false, $context);
+    
+    if ($result === FALSE) {
+        echo "حدث خطأ أثناء إضافة المراجعة.<br>";
+        $error = error_get_last();
+        echo "تفاصيل الخطأ: " . htmlspecialchars($error['message']);
     } else {
-        echo "تم إضافة المراجعة بنجاح!";
+        $response = json_decode($result, true);
+        if (isset($response['error'])) {
+            echo "خطأ من قاعدة البيانات: " . htmlspecialchars($response['error']['message']);
+        } else {
+            header("Location: Review.php");
+            exit();
+        }
     }
-    curl_close($ch);
 }
 
-// جلب المراجعات من قاعدة البيانات
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, "$supabase_url/rest/v1/reviews");
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "Content-Type: application/json",
-    "Authorization: Bearer $supabase_key",
-    "apikey: $supabase_key",
-    "Prefer: return=representation"
-]);
+// جلب الآراء من قاعدة البيانات
+$options = [
+    "http" => [
+        "header" => "Authorization: Bearer $supabase_key",
+        "ignore_errors" => true
+    ],
+    "ssl" => [
+        "verify_peer" => false,
+        "verify_peer_name" => false
+    ]
+];
+$context = stream_context_create($options);
+$response = file_get_contents("$supabase_url/rest/v1/reviews?select=*", false, $context);
 
-$result = curl_exec($ch);
-$reviews = json_decode($result, true) ?: [];
-curl_close($ch);
+if ($response === FALSE) {
+    echo "حدث خطأ أثناء جلب البيانات من Supabase.";
+    $error = error_get_last();
+    echo "تفاصيل الخطأ: " . htmlspecialchars($error['message']);
+    $reviews = [];
+} else {
+    $reviews = json_decode($response, true);
+    if (!is_array($reviews)) {
+        echo "حدث خطأ أثناء جلب البيانات. الاستجابة غير صحيحة.";
+        $reviews = [];
+    }
+}
 ?>
 
 <!DOCTYPE html>
-<html lang="ar">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>صفحة الآراء والتعليقات</title>
-    <link rel="icon" href="img/4660619.png">
+    <title>صفحة الآراء و التعليقات</title>
+    <link rel="website icon" type="png" href="img/4660619.png">
     <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
@@ -82,17 +110,25 @@ curl_close($ch);
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto"> 
-                    <li class="nav-item"><a class="nav-link" href="index.html">Home</a></li>
-                    <li class="nav-item"><a class="nav-link" href="index.php">Products</a></li>
-                    <li class="nav-item"><a class="nav-link" href="About_us.html">About</a></li>
-                    <li class="nav-item"><a class="nav-link" href="Review.php">Review</a></li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.html">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.php">Products</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="About_us.html">About</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="Review.php">Review</a>
+                    </li>
                 </ul>
             </div>
         </div>
     </nav>
 
     <!-- Display Reviews -->
-    <div class="container reviews-container my-5">
+    <div class="container reviews-container">
         <h2>Reviews</h2>
         <?php if (!empty($reviews)): ?>
             <?php foreach ($reviews as $review): ?>
@@ -100,7 +136,7 @@ curl_close($ch);
                     <div class="card review-card mb-3">
                         <div class="card-header">
                             <?php echo htmlspecialchars($review['name']); ?> 
-                            <span class="rating"><?php echo str_repeat('★', (int)$review['rating']); ?></span>
+                            <span class="rating"><?php echo str_repeat('★', $review['rating']); ?></span>
                         </div>
                         <div class="card-body">
                             <p class="card-text"><?php echo htmlspecialchars($review['text']); ?></p>
